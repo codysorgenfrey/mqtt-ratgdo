@@ -1,18 +1,10 @@
 {
-    "files.associations": {
-		"system_error": "cpp",
-		"array": "cpp",
-		"string": "cpp",
-		"string_view": "cpp",
-		"ranges": "cpp",
-		"chrono": "cpp",
-		"compare": "cpp",
-		"functional": "cpp",
-		"istream": "cpp",
-		"ostream": "cpp",
-		"ratio": "cpp",
-		"tuple": "cpp",
-		"type_traits": "cpp",
-		"utility": "cpp"
-	}
+  "arduino.path": "/opt/homebrew/bin",
+  "arduino.commandPath": "arduino-cli",
+  "arduino.useArduinoCli": true,
+  "arduino.fqbn": "esp8266:esp8266:d1_mini",
+  "arduino.additionalUrls": [
+    "https://raw.githubusercontent.com/espressif/arduino-esp32/gh-pages/package_esp32_index.json",
+    "http://arduino.esp8266.com/stable/package_esp8266com_index.json"
+  ]
 }

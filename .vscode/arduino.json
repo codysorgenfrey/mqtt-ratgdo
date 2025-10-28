@@ -1,0 +1,9 @@
+{
+  "sketch": "examples/Test/Test.ino",
+  "configuration": "xtal=160,vt=flash,exception=disabled,stacksmash=disabled,ssl=basic,mmu=3232,non32xfer=fast,eesz=4M,ip=lm2f,dbg=Disabled,lvl=None____,wipe=none,baud=115200",
+  "board": "esp8266:esp8266:d1_mini",
+  "port": "/dev/tty.usbserial-140",
+  "intelliSenseGen": "disable",
+  "output": "./build",
+  "programmer": "esptool"
+}
