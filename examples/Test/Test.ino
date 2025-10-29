@@ -7,9 +7,10 @@ void setup() {
   while (!Serial && millis() < 30000) {
     // wait for serial port to connect. Needed for native USB
   }
-  Serial.println("Hello, Arduino!");
+  
+  setupRATGDO();
 }
 
 void loop() {
-  // put your main code here, to run repeatedly:
+  loopRATGDO();
 }
