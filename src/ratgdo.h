@@ -42,6 +42,7 @@ extern uint8_t lightState;
 extern uint8_t lockState;
 extern uint8_t motionState;
 extern uint8_t obstructionState;
+using NewStateCallback = std::function<void(uint8_t newState)>;
 
 /********************************** GLOBAL VARS *****************************************/
 extern bool setupComplete;
@@ -68,6 +69,11 @@ extern bool dryContactToggleLight;
 /********************************** FUNCTION DECLARATION *****************************************/
 void setupRATGDO();
 void loopRATGDO();
+void setNewDoorStateCallback(NewStateCallback cb);
+void setNewLightStateCallback(NewStateCallback cb);
+void setNewLockStateCallback(NewStateCallback cb);
+void setNewMotionStateCallback(NewStateCallback cb);
+void setNewObstructionStateCallback(NewStateCallback cb);
 
 void blink(bool trigger);
 void sync();

@@ -25,18 +25,23 @@ String controlProtocol = "secplus2"; // default control protocol (secplus2 | sec
 // STATE
 uint8_t doorState = 0;
 String doorStates[7] = { "unknown","open","closed","stopped","opening","closing","syncing" };
+NewStateCallback doorStateCallback = nullptr;
 
 uint8_t lightState = 2;
 String lightStates[3] = { "off","on","unknown" };
+NewStateCallback lightStateCallback = nullptr;
 
 uint8_t lockState = 2;
 String lockStates[3] = { "unlocked","locked","unknown" };
+NewStateCallback lockStateCallback = nullptr;
 
 uint8_t motionState = 0;
 String motionStates[2] = { "clear","detected" };
+NewStateCallback motionStateCallback = nullptr;
 
 uint8_t obstructionState = 2;
 String obstructionStates[3] = { "obstructed","clear","unknown" };
+NewStateCallback obstructionStateCallback = nullptr;
 
 // GLOBAL VARS
 bool setupComplete = false;
@@ -459,6 +464,10 @@ void obstructionLoop() {
 
 /*************************** STATUS UPDATES ***************************/
 
+void setNewDoorStateCallback(NewStateCallback cb) {
+  doorStateCallback = cb;
+}
+
 void sendDoorStatus() {
   Serial.print("Door state ");
   Serial.println(doorStates[doorState]);
@@ -466,36 +475,48 @@ void sendDoorStatus() {
   if (doorState == 1) digitalWrite(STATUS_DOOR, HIGH); // Open
   if (doorState == 2) digitalWrite(STATUS_DOOR, LOW); // Closed
 
-  // if (isConfigFileOk) {
-  //   bootstrapManager.publish(doorStatusTopic.c_str(), doorStates[doorState].c_str(), true);
-  // }
+  if (doorStateCallback != nullptr) {
+    doorStateCallback(doorState);
+  }
+}
+
+void setNewLightStateCallback(NewStateCallback cb) {
+  lightStateCallback = cb;
 }
 
 void sendLightStatus() {
   Serial.print("Light state ");
   Serial.println(lightStates[lightState]);
 
-  // if (isConfigFileOk) {
-  //   bootstrapManager.publish(lightStatusTopic.c_str(), lightStates[lightState].c_str(), true);
-  // }
+  if (lightStateCallback != nullptr) {
+    lightStateCallback(lightState);
+  }
+}
+
+void setNewLockStateCallback(NewStateCallback cb) {
+  lockStateCallback = cb;
 }
 
 void sendLockStatus() {
   Serial.print("Lock state ");
   Serial.println(lockStates[lockState]);
 
-  // if (isConfigFileOk) {
-  //   bootstrapManager.publish(lockStatusTopic.c_str(), lockStates[lockState].c_str(), true);
-  // }
+  if (lockStateCallback != nullptr) {
+    lockStateCallback(lockState);
+  }
+}
+
+void setNewMotionStateCallback(NewStateCallback cb) {
+  motionStateCallback = cb;
 }
 
 void sendMotionStatus() {
   Serial.print("Motion state ");
   Serial.println(motionStates[motionState]);
 
-  // if (isConfigFileOk) {
-  //   bootstrapManager.publish(motionStatusTopic.c_str(), motionStates[motionState].c_str(), false);
-  // }
+  if (motionStateCallback != nullptr) {
+    motionStateCallback(motionState);
+  }
 
   motionState = 0; // reset motion state
 
@@ -505,6 +526,10 @@ void sendMotionStatus() {
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
 }
 
+void setObstructionStateCallback(NewStateCallback cb) {
+  obstructionStateCallback = cb;
+}
+
 void sendObstructionStatus() {
   Serial.print("Obstruction status ");
   Serial.println(obstructionStates[obstructionState]);
@@ -512,9 +537,9 @@ void sendObstructionStatus() {
   if (obstructionState == 0) digitalWrite(STATUS_OBST, HIGH); // obstructed
   if (obstructionState == 1) digitalWrite(STATUS_OBST, LOW); // clear
 
-  // if (isConfigFileOk) {
-  //   bootstrapManager.publish(obstructionStatusTopic.c_str(), obstructionStates[obstructionState].c_str(), true);
-  // }
+  if (obstructionStateCallback != nullptr) {
+    obstructionStateCallback(obstructionState);
+  }
 }
 
 void statusUpdateLoop() {
