@@ -1,14 +1,7 @@
 #ifndef _RATGDO_ROLLING_CODE_H
 #define _RATGDO_ROLLING_CODE_H
 
-#include <Arduino.h>
-#include <LittleFS.h>
-#include <ArduinoJson.h>
-#include "BootstrapManager.h"
-
-extern "C" {
-#include "secplus.h"
-}
+#include "common.h"
 
 void readCounterFromFlash(const char *type, unsigned int &counter); // get the rolling code counter from setup.json & return it
 void writeCounterToFlash(const char *type, unsigned int &counter); // write the counter back to setup.json

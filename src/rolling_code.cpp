@@ -1,6 +1,10 @@
-#include "common.h"
+#include <Arduino.h>
+#include <LittleFS.h>
 #include "rolling_code.h"
-#include "Helpers.h"
+
+extern "C" {
+  #include "secplus.h"
+}
 
 void readCounterFromFlash(const char *type, unsigned int &counter){
 

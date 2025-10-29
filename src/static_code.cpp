@@ -1,4 +1,3 @@
-#include "common.h"
 #include "static_code.h"
 
 void readStaticCode(byte rxSP1StaticCode[SECPLUS1_CODE_LEN], uint8_t &door, uint8_t &light, uint8_t &lock){

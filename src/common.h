@@ -1,3 +1,6 @@
+#ifndef _RATGDO_COMMON_H
+#define _RATGDO_COMMON_H
+
 #include <Arduino.h>
 
 #define SECPLUS2_CODE_LEN 19 // the length of each command sent to the door.
@@ -9,3 +12,5 @@ extern unsigned int idCode;
 #define SECPLUS1_CODE_LEN 2
 extern byte txSP1StaticCode[4];
 extern byte rxSP1StaticCode[SECPLUS1_CODE_LEN];
+
+#endif
