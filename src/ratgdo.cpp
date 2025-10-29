@@ -60,94 +60,95 @@ bool dryContactDoorOpen = false;
 bool dryContactDoorClose = false;
 bool dryContactToggleLight = false;
 
-/*************************** SETUP FUNCTION ***************************/
-void setupRATGDO() {
-  if (OUTPUT_GDO != LED_BUILTIN) {
-    pinMode(LED_BUILTIN, OUTPUT);
-    digitalWrite(LED_BUILTIN, LOW);
-  }
-  pinMode(INPUT_GDO, INPUT_PULLUP);
-  pinMode(OUTPUT_GDO, OUTPUT);
+/************************* DOOR COMMUNICATION *************************/
+/*
+ * Transmit a message to the door opener over uart1
+ * The TX1 pin is controlling a transistor, so the logic is inverted
+ * A HIGH state on TX1 will pull the 12v line LOW
+ *
+ * The opener requires a specific duration low/high pulse before it will accept a message
+ */
+void transmit(byte* payload, unsigned int length) {
+  if (controlProtocol == "secplus2") {
+    digitalWrite(OUTPUT_GDO, HIGH); // pull the line high for 1305 micros so the door opener responds to the message
+    delayMicroseconds(1305);
+    digitalWrite(OUTPUT_GDO, LOW); // bring the line low
 
-  Serial.begin(115200); // must remain at 115200 for improv
-  Serial.println("");
+    delayMicroseconds(1260); // "LOW" pulse duration before the message start
 
-  pinMode(TRIGGER_OPEN, INPUT_PULLUP);
-  pinMode(TRIGGER_CLOSE, INPUT_PULLUP);
-  pinMode(TRIGGER_LIGHT, INPUT_PULLUP);
-  pinMode(STATUS_DOOR, OUTPUT);
-  pinMode(STATUS_OBST, OUTPUT);
-  pinMode(INPUT_OBST, INPUT);
-
-  attachInterrupt(TRIGGER_OPEN, isrDoorOpen, CHANGE);
-  attachInterrupt(TRIGGER_CLOSE, isrDoorClose, CHANGE);
-  attachInterrupt(TRIGGER_LIGHT, isrLight, CHANGE);
-  attachInterrupt(INPUT_OBST, isrObstruction, CHANGE);
-
-  delay(60); // 
-  if (controlProtocol == "drycontact") {
-    Serial.println("Using dry contact control");
+    swSerial.write(payload, length);
   }
   else if (controlProtocol == "secplus1") {
-    swSerial.begin(1200, SWSERIAL_8E1, INPUT_GDO, OUTPUT_GDO, true);
-    Serial.println("Using security+ 1.0");
-  }
-  else {
-    // default to secplus2
-    controlProtocol = "secplus2";
-    swSerial.begin(9600, SWSERIAL_8N1, INPUT_GDO, OUTPUT_GDO, true);
-    Serial.println("Using security+ 2.0");
-  }
+    if (length == 1) {
+      swSerial.write(payload, 1);
+      return;
+    }
 
-  Serial.println("Setup Complete");
-  Serial.println(" _____ _____ _____ _____ ____  _____ ");
-  Serial.println("| __  |  _  |_   _|   __|    \\|     |");
-  Serial.println("|    -|     | | | |  |  |  |  |  |  |");
-  Serial.println("|__|__|__|__| |_| |_____|____/|_____|");
-  Serial.println("https://paulwieland.github.io/ratgdo/");
-  Serial.print("version ");
-  Serial.print(VERSION);
-  Serial.println("");
+    uint8_t txDelayLen;
+    byte tempPayload[1];
 
-  delay(500);
+    txDelayLen = (lastRX + 275) - millis();
+    delay(txDelayLen);
+
+    for (uint8_t i = 0; i <= length; i++) {
+      tempPayload[0] = payload[i];
+      swSerial.write(tempPayload, 1);
+      delay(25);
+    }
+  }
 }
 
+void pullLow() {
+  digitalWrite(OUTPUT_GDO, HIGH);
+  delay(500);
+  digitalWrite(OUTPUT_GDO, LOW);
+}
 
-/*************************** MAIN LOOP ***************************/
-void loopRATGDO() {
-  if (!setupComplete) {
-    setupComplete = true;
-    setupCompleteMillis = millis();
+void blink(bool trigger) {
+  if (LED_BUILTIN == OUTPUT_GDO) return;
+  static unsigned int onMillis = 0;
+  unsigned int currentMillis = millis();
 
-    if (OUTPUT_GDO != LED_BUILTIN) {
-      digitalWrite(LED_BUILTIN, HIGH);
-    }
+  if (trigger) {
+    digitalWrite(LED_BUILTIN, LOW);
+    onMillis = currentMillis;
+  }
+  else if (currentMillis - onMillis > 500) {
+    digitalWrite(LED_BUILTIN, HIGH);
+  }
+}
 
-    if (controlProtocol == "secplus2") {
-      LittleFS.begin();
-
-      readCounterFromFlash("idCode", idCode);
-      Serial.print("exisiting client ID: ");
-      Serial.println(idCode, HEX);
-      if ((idCode & 0xFFF) != 0x539) {
-        Serial.println("Initializing new client ID: ");
-        idCode = (random(0x1, 0xFFFF) % 0x7FF) << 12 | 0x539;
-        writeCounterToFlash("idCode", idCode);
-        Serial.println(idCode, HEX);
-      }
-      readCounterFromFlash("rolling", rollingCodeCounter);
-
-      Serial.println("Syncing rolling code counter after reboot...");
-      sync(); // send reboot/sync to the opener on startup
-    }
-
+void sync() {
+  if (controlProtocol != "secplus2") {
+    Serial.println("sync only needed with security+ 2.0");
+    return;
   }
 
-  obstructionLoop();
-  gdoStateLoop();
-  dryContactLoop();
-  statusUpdateLoop();
-  wallPanelEmulatorLoop();
+  getRollingCode("reboot1");
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  delay(65);
+
+  getRollingCode("reboot2");
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  delay(65);
+
+  getRollingCode("reboot3");
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  delay(65);
+
+  getRollingCode("reboot4");
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  delay(65);
+
+  getRollingCode("reboot5");
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  delay(65);
+
+  getRollingCode("reboot6");
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  delay(65);
+
+  writeCounterToFlash("rolling", rollingCodeCounter);
 }
 
 /*************************** DETECTING THE DOOR STATE ***************************/
@@ -457,28 +458,6 @@ void obstructionLoop() {
 }
 
 /*************************** STATUS UPDATES ***************************/
-void statusUpdateLoop() {
-  // initialize to unknown
-  static uint8_t previousDoorState = 0;
-  static uint8_t previousLightState = 2;
-  static uint8_t previousLockState = 2;
-  static uint8_t previousObstructionState = 2;
-
-  if (doorState != previousDoorState) sendDoorStatus();
-  if (lightState != previousLightState) sendLightStatus();
-  if (lockState != previousLockState) sendLockStatus();
-  if (obstructionState != previousObstructionState) sendObstructionStatus();
-
-  if (motionState == 1) {
-    sendMotionStatus();
-    motionState = 0;
-  }
-
-  previousDoorState = doorState;
-  previousLightState = lightState;
-  previousLockState = lockState;
-  previousObstructionState = obstructionState;
-}
 
 void sendDoorStatus() {
   Serial.print("Door state ");
@@ -538,95 +517,27 @@ void sendObstructionStatus() {
   // }
 }
 
-/************************* DOOR COMMUNICATION *************************/
-/*
- * Transmit a message to the door opener over uart1
- * The TX1 pin is controlling a transistor, so the logic is inverted
- * A HIGH state on TX1 will pull the 12v line LOW
- *
- * The opener requires a specific duration low/high pulse before it will accept a message
- */
-void transmit(byte* payload, unsigned int length) {
-  if (controlProtocol == "secplus2") {
-    digitalWrite(OUTPUT_GDO, HIGH); // pull the line high for 1305 micros so the door opener responds to the message
-    delayMicroseconds(1305);
-    digitalWrite(OUTPUT_GDO, LOW); // bring the line low
+void statusUpdateLoop() {
+  // initialize to unknown
+  static uint8_t previousDoorState = 0;
+  static uint8_t previousLightState = 2;
+  static uint8_t previousLockState = 2;
+  static uint8_t previousObstructionState = 2;
 
-    delayMicroseconds(1260); // "LOW" pulse duration before the message start
+  if (doorState != previousDoorState) sendDoorStatus();
+  if (lightState != previousLightState) sendLightStatus();
+  if (lockState != previousLockState) sendLockStatus();
+  if (obstructionState != previousObstructionState) sendObstructionStatus();
 
-    swSerial.write(payload, length);
-  }
-  else if (controlProtocol == "secplus1") {
-    if (length == 1) {
-      swSerial.write(payload, 1);
-      return;
-    }
-
-    uint8_t txDelayLen;
-    byte tempPayload[1];
-
-    txDelayLen = (lastRX + 275) - millis();
-    delay(txDelayLen);
-
-    for (uint8_t i = 0; i <= length; i++) {
-      tempPayload[0] = payload[i];
-      swSerial.write(tempPayload, 1);
-      delay(25);
-    }
-  }
-}
-
-void pullLow() {
-  digitalWrite(OUTPUT_GDO, HIGH);
-  delay(500);
-  digitalWrite(OUTPUT_GDO, LOW);
-}
-
-void blink(bool trigger) {
-  if (LED_BUILTIN == OUTPUT_GDO) return;
-  static unsigned int onMillis = 0;
-  unsigned int currentMillis = millis();
-
-  if (trigger) {
-    digitalWrite(LED_BUILTIN, LOW);
-    onMillis = currentMillis;
-  }
-  else if (currentMillis - onMillis > 500) {
-    digitalWrite(LED_BUILTIN, HIGH);
-  }
-}
-
-void sync() {
-  if (controlProtocol != "secplus2") {
-    Serial.println("sync only needed with security+ 2.0");
-    return;
+  if (motionState == 1) {
+    sendMotionStatus();
+    motionState = 0;
   }
 
-  getRollingCode("reboot1");
-  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-  delay(65);
-
-  getRollingCode("reboot2");
-  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-  delay(65);
-
-  getRollingCode("reboot3");
-  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-  delay(65);
-
-  getRollingCode("reboot4");
-  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-  delay(65);
-
-  getRollingCode("reboot5");
-  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-  delay(65);
-
-  getRollingCode("reboot6");
-  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-  delay(65);
-
-  writeCounterToFlash("rolling", rollingCodeCounter);
+  previousDoorState = doorState;
+  previousLightState = lightState;
+  previousLockState = lockState;
+  previousObstructionState = obstructionState;
 }
 
 // Door functions
@@ -743,4 +654,94 @@ void toggleLock() {
     transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
     writeCounterToFlash("rolling", rollingCodeCounter);
   }
+}
+
+/*************************** SETUP FUNCTION ***************************/
+void setupRATGDO() {
+  if (OUTPUT_GDO != LED_BUILTIN) {
+    pinMode(LED_BUILTIN, OUTPUT);
+    digitalWrite(LED_BUILTIN, LOW);
+  }
+  pinMode(INPUT_GDO, INPUT_PULLUP);
+  pinMode(OUTPUT_GDO, OUTPUT);
+
+  Serial.begin(115200); // must remain at 115200 for improv
+  Serial.println("");
+
+  pinMode(TRIGGER_OPEN, INPUT_PULLUP);
+  pinMode(TRIGGER_CLOSE, INPUT_PULLUP);
+  pinMode(TRIGGER_LIGHT, INPUT_PULLUP);
+  pinMode(STATUS_DOOR, OUTPUT);
+  pinMode(STATUS_OBST, OUTPUT);
+  pinMode(INPUT_OBST, INPUT);
+
+  attachInterrupt(TRIGGER_OPEN, isrDoorOpen, CHANGE);
+  attachInterrupt(TRIGGER_CLOSE, isrDoorClose, CHANGE);
+  attachInterrupt(TRIGGER_LIGHT, isrLight, CHANGE);
+  attachInterrupt(INPUT_OBST, isrObstruction, CHANGE);
+
+  delay(60); // 
+  if (controlProtocol == "drycontact") {
+    Serial.println("Using dry contact control");
+  }
+  else if (controlProtocol == "secplus1") {
+    swSerial.begin(1200, SWSERIAL_8E1, INPUT_GDO, OUTPUT_GDO, true);
+    Serial.println("Using security+ 1.0");
+  }
+  else {
+    // default to secplus2
+    controlProtocol = "secplus2";
+    swSerial.begin(9600, SWSERIAL_8N1, INPUT_GDO, OUTPUT_GDO, true);
+    Serial.println("Using security+ 2.0");
+  }
+
+  Serial.println("Setup Complete");
+  Serial.println(" _____ _____ _____ _____ ____  _____ ");
+  Serial.println("| __  |  _  |_   _|   __|    \\|     |");
+  Serial.println("|    -|     | | | |  |  |  |  |  |  |");
+  Serial.println("|__|__|__|__| |_| |_____|____/|_____|");
+  Serial.println("https://paulwieland.github.io/ratgdo/");
+  Serial.print("version ");
+  Serial.print(VERSION);
+  Serial.println("");
+
+  delay(500);
+}
+
+
+/*************************** MAIN LOOP ***************************/
+void loopRATGDO() {
+  if (!setupComplete) {
+    setupComplete = true;
+    setupCompleteMillis = millis();
+
+    if (OUTPUT_GDO != LED_BUILTIN) {
+      digitalWrite(LED_BUILTIN, HIGH);
+    }
+
+    if (controlProtocol == "secplus2") {
+      LittleFS.begin();
+
+      readCounterFromFlash("idCode", idCode);
+      Serial.print("exisiting client ID: ");
+      Serial.println(idCode, HEX);
+      if ((idCode & 0xFFF) != 0x539) {
+        Serial.println("Initializing new client ID: ");
+        idCode = (random(0x1, 0xFFFF) % 0x7FF) << 12 | 0x539;
+        writeCounterToFlash("idCode", idCode);
+        Serial.println(idCode, HEX);
+      }
+      readCounterFromFlash("rolling", rollingCodeCounter);
+
+      Serial.println("Syncing rolling code counter after reboot...");
+      sync(); // send reboot/sync to the opener on startup
+    }
+
+  }
+
+  obstructionLoop();
+  gdoStateLoop();
+  dryContactLoop();
+  statusUpdateLoop();
+  wallPanelEmulatorLoop();
 }

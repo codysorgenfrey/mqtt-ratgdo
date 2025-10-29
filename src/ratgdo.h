@@ -38,19 +38,10 @@ extern String controlProtocol; // default control protocol (secplus2 | secplus1 
 
 /********************************** STATE *****************************************/
 extern uint8_t doorState;
-extern String doorStates[7];
-
 extern uint8_t lightState;
-extern String lightStates[3];
-
 extern uint8_t lockState;
-extern String lockStates[3];
-
 extern uint8_t motionState;
-extern String motionStates[2];
-
 extern uint8_t obstructionState;
-extern String obstructionStates[3];
 
 /********************************** GLOBAL VARS *****************************************/
 extern bool setupComplete;
@@ -79,43 +70,19 @@ void setupRATGDO();
 void loopRATGDO();
 
 void blink(bool trigger);
-void transmit(byte* payload, unsigned int length);
 void sync();
 
 void toggleDoor();
 void openDoor();
 void closeDoor();
 void stopDoor();
-void sendDoorStatus();
 
 void toggleLight();
 void lightOn();
 void lightOff();
-void sendLightStatus();
 
 void toggleLock();
 void lock();
 void unlock();
-void sendLockStatus();
-
-void sendMotionStatus();
-
-void obstructionLoop();
-void sendObstructionStatus();
-
-void statusUpdateLoop();
-
-void gdoStateLoop();
-void dryContactLoop();
-void wallPanelEmulatorLoop();
-
-void pullLow();
-
-/********************************** INTERRUPT SERVICE ROUTINES ***********************************/
-void IRAM_ATTR isrDebounce(const char* type);
-void IRAM_ATTR isrDoorOpen();
-void IRAM_ATTR isrDoorClose();
-void IRAM_ATTR isrLight();
-void IRAM_ATTR isrObstruction();
 
 #endif
