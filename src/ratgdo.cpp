@@ -526,7 +526,7 @@ void sendMotionStatus() {
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
 }
 
-void setObstructionStateCallback(NewStateCallback cb) {
+void setNewObstructionStateCallback(NewStateCallback cb) {
   obstructionStateCallback = cb;
 }
 
