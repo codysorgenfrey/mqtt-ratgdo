@@ -710,7 +710,9 @@ void setupRATGDO() {
   pinMode(INPUT_GDO, INPUT_PULLUP);
   pinMode(OUTPUT_GDO, OUTPUT);
 
-  Serial.begin(115200); // must remain at 115200 for improv
+  if (!Serial) {
+    Serial.begin(115200);
+  }
   Serial.println("");
 
   pinMode(TRIGGER_OPEN, INPUT_PULLUP);
