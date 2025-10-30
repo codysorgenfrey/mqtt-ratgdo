@@ -27,7 +27,7 @@ extern String controlProtocol; // default control protocol (secplus2 | secplus1 
 
 /********************************** PIN DEFINITIONS *****************************************/
 #define INPUT_GDO D2 // 
-#define OUTPUT_GDO D4 // D1 // D4 // red control terminal / GarageDoorOpener (UART1 TX) pin is D4 on D1 Mini
+#define OUTPUT_GDO D1 // red control terminal / GarageDoorOpener (UART1 TX) pin is D4 on D1 Mini
 #define TRIGGER_OPEN D5 // dry contact for opening door
 #define TRIGGER_CLOSE D6 // dry contact for closing door
 #define TRIGGER_LIGHT D3 // dry contact for triggering light (no discrete light commands, so toggle only)
