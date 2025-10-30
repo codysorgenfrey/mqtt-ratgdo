@@ -77,13 +77,19 @@ void toggleDoor();
 void openDoor();
 void closeDoor();
 void stopDoor();
+int getDoorState();
 
 void toggleLight();
 void lightOn();
 void lightOff();
+int getLightState();
 
 void toggleLock();
 void lock();
 void unlock();
+int getLockState();
+
+int getMotionState();
+int getObstructionState();
 
 #endif

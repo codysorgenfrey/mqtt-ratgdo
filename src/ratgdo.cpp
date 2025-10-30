@@ -480,6 +480,10 @@ void sendDoorStatus() {
   }
 }
 
+int getDoorState() {
+  return doorState;
+}
+
 void setNewLightStateCallback(NewStateCallback cb) {
   lightStateCallback = cb;
 }
@@ -493,6 +497,10 @@ void sendLightStatus() {
   }
 }
 
+int getLightState() {
+  return lightState;
+}
+
 void setNewLockStateCallback(NewStateCallback cb) {
   lockStateCallback = cb;
 }
@@ -504,6 +512,10 @@ void sendLockStatus() {
   if (lockStateCallback != nullptr) {
     lockStateCallback(lockState);
   }
+}
+
+int getLockState() {
+  return lockState;
 }
 
 void setNewMotionStateCallback(NewStateCallback cb) {
@@ -526,6 +538,10 @@ void sendMotionStatus() {
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
 }
 
+int getMotionState() {
+  return motionState;
+}
+
 void setNewObstructionStateCallback(NewStateCallback cb) {
   obstructionStateCallback = cb;
 }
@@ -540,6 +556,10 @@ void sendObstructionStatus() {
   if (obstructionStateCallback != nullptr) {
     obstructionStateCallback(obstructionState);
   }
+}
+
+int getObstructionState() {
+  return obstructionState;
 }
 
 void statusUpdateLoop() {
