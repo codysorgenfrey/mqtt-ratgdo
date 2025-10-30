@@ -37,11 +37,6 @@ extern String controlProtocol; // default control protocol (secplus2 | secplus1 
 
 
 /********************************** STATE *****************************************/
-extern uint8_t doorState;
-extern uint8_t lightState;
-extern uint8_t lockState;
-extern uint8_t motionState;
-extern uint8_t obstructionState;
 using NewStateCallback = std::function<void(uint8_t newState)>;
 
 /********************************** GLOBAL VARS *****************************************/
