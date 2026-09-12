@@ -62,7 +62,11 @@ extern bool dryContactDoorClose;
 extern bool dryContactToggleLight;
 
 /********************************** FUNCTION DECLARATION *****************************************/
-void setupRATGDO();
+bool setupRATGDO();
+bool ratgdoStorageReady();
+const char* ratgdoStorageError();
+// Explicit maintenance only: never call automatically on setup failure.
+bool provisionRATGDO(uint32_t controllerId, uint32_t nextRollingCode);
 void loopRATGDO();
 void setNewDoorStateCallback(NewStateCallback cb);
 void setNewLightStateCallback(NewStateCallback cb);

@@ -14,6 +14,7 @@
 #include <LittleFS.h>
 #include "ratgdo.h"
 #include "rolling_code.h"
+#include "rolling_storage.h"
 #include "static_code.h"
 
  /********************************** VARIABLE DEFINITIONS *****************************************/
@@ -75,6 +76,7 @@ bool dryContactToggleLight = false;
  */
 void transmit(byte* payload, unsigned int length) {
   if (controlProtocol == "secplus2") {
+    if (!consumeRollingCode(payload, length)) return;
     digitalWrite(OUTPUT_GDO, HIGH); // pull the line high for 1305 micros so the door opener responds to the message
     delayMicroseconds(1305);
     digitalWrite(OUTPUT_GDO, LOW); // bring the line low
@@ -129,31 +131,30 @@ void sync() {
     return;
   }
 
-  getRollingCode("reboot1");
+  if (!getRollingCode("reboot1")) return;
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
   delay(65);
 
-  getRollingCode("reboot2");
+  if (!getRollingCode("reboot2")) return;
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
   delay(65);
 
-  getRollingCode("reboot3");
+  if (!getRollingCode("reboot3")) return;
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
   delay(65);
 
-  getRollingCode("reboot4");
+  if (!getRollingCode("reboot4")) return;
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
   delay(65);
 
-  getRollingCode("reboot5");
+  if (!getRollingCode("reboot5")) return;
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
   delay(65);
 
-  getRollingCode("reboot6");
+  if (!getRollingCode("reboot6")) return;
   transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
   delay(65);
 
-  writeCounterToFlash("rolling", rollingCodeCounter);
 }
 
 /*************************** DETECTING THE DOOR STATE ***************************/
@@ -534,8 +535,9 @@ void sendMotionStatus() {
 
   // query to sync light state
   delay(100);
-  getRollingCode("reboot2");
-  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  if (controlProtocol == "secplus2" && getRollingCode("reboot2")) {
+    transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  }
 }
 
 int getMotionState() {
@@ -624,15 +626,14 @@ void toggleDoor() {
     transmit(txSP1StaticCode, 4);
   }
   else {
-    getRollingCode("door1");
+    if (!getRollingCode("door1")) return;
     transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
 
     delay(40);
 
-    getRollingCode("door2");
+    if (!getRollingCode("door2")) return;
     transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
 
-    writeCounterToFlash("rolling", rollingCodeCounter);
   }
 }
 
@@ -664,9 +665,8 @@ void toggleLight() {
     transmit(txSP1StaticCode, 4);
   }
   else {
-    getRollingCode("light");
+    if (!getRollingCode("light")) return;
     transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-    writeCounterToFlash("rolling", rollingCodeCounter);
   }
 }
 
@@ -695,14 +695,13 @@ void toggleLock() {
     transmit(txSP1StaticCode, 4);
   }
   else {
-    getRollingCode("lock");
+    if (!getRollingCode("lock")) return;
     transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
-    writeCounterToFlash("rolling", rollingCodeCounter);
   }
 }
 
 /*************************** SETUP FUNCTION ***************************/
-void setupRATGDO() {
+bool setupRATGDO() {
   if (OUTPUT_GDO != LED_BUILTIN) {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LOW);
@@ -742,7 +741,12 @@ void setupRATGDO() {
     Serial.println("Using security+ 2.0");
   }
 
-  Serial.println("Setup Complete");
+  const bool storageReady = controlProtocol != "secplus2" || beginRollingStorage();
+  if (!storageReady) {
+    Serial.print("RATGDO storage: ");
+    Serial.println(ratgdoStorageError());
+  }
+  Serial.println(storageReady ? "Setup Complete" : "Setup receive-only: transmission disabled");
   Serial.println(" _____ _____ _____ _____ ____  _____ ");
   Serial.println("| __  |  _  |_   _|   __|    \\|     |");
   Serial.println("|    -|     | | | |  |  |  |  |  |  |");
@@ -753,6 +757,7 @@ void setupRATGDO() {
   Serial.println("");
 
   delay(500);
+  return storageReady;
 }
 
 
@@ -767,21 +772,14 @@ void loopRATGDO() {
     }
 
     if (controlProtocol == "secplus2") {
-      LittleFS.begin();
-
-      readCounterFromFlash("idCode", idCode);
-      Serial.print("exisiting client ID: ");
-      Serial.println(idCode, HEX);
-      if ((idCode & 0xFFF) != 0x539) {
-        Serial.println("Initializing new client ID: ");
-        idCode = (random(0x1, 0xFFFF) % 0x7FF) << 12 | 0x539;
-        writeCounterToFlash("idCode", idCode);
+      if (ratgdoStorageReady()) {
+        idCode = ratgdoRollingStore().id();
+        rollingCodeCounter = ratgdoRollingStore().next();
+        Serial.print("Persistent client ID: ");
         Serial.println(idCode, HEX);
+        Serial.println("Syncing reserved rolling code counter after reboot...");
+        sync(); // Existing non-actuating startup/status queries.
       }
-      readCounterFromFlash("rolling", rollingCodeCounter);
-
-      Serial.println("Syncing rolling code counter after reboot...");
-      sync(); // send reboot/sync to the opener on startup
     }
 
   }

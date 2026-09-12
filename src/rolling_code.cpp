@@ -1,42 +1,28 @@
 #include <Arduino.h>
 #include <LittleFS.h>
 #include "rolling_code.h"
+#include "rolling_storage.h"
 
 extern "C" {
   #include "secplus.h"
 }
 
-void readCounterFromFlash(const char *type, unsigned int &counter){
-
-	File file = LittleFS.open(type, "r");
-
-	//Check if the file exists
-	if(!file){
-		Serial.print(type);
-		Serial.println(" doesn't exist. creating...");
-
-		writeCounterToFlash(type,counter);
-		return;
-	}
-
-	counter = file.parseInt();
-
-	//Close the file
-	file.close();
+namespace {
+bool prepared = false;
+bool preparedDoorPress = false;
+bool doorReleasePending = false;
+uint32_t doorCounter = 0;
+byte preparedPayload[SECPLUS2_CODE_LEN];
 }
 
-void writeCounterToFlash(const char *type, unsigned int &counter){
-	//Open the file 
-	File file = LittleFS.open(type, "w");
-	
-	//Write to the file
-	file.print(counter);
-	delay(1);
-	//Close the file
-	file.close();
-	
-	Serial.print(type);
-	Serial.println(" write successful");
+bool consumeRollingCode(const byte* payload, unsigned int length) {
+  const bool allowed = ratgdoRollingStore().ready() && prepared &&
+      length == SECPLUS2_CODE_LEN && payload != nullptr &&
+      memcmp(payload, preparedPayload, SECPLUS2_CODE_LEN) == 0;
+  prepared = false;
+  doorReleasePending = allowed && preparedDoorPress;
+  if (!allowed) Serial.println("RATGDO: blocked unreserved or stale transmission");
+  return allowed;
 }
 
 void readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, uint8_t &light, uint8_t &lock, uint8_t &motion, uint8_t &obstruction){
@@ -91,7 +77,21 @@ void readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, ui
 	Serial.println("");
 }
 
-void getRollingCode(const char *command){
+bool getRollingCode(const char *command){
+  prepared = false;
+  const bool release = command && strcmp(command, "door2") == 0;
+  const bool pairedRelease = release && doorReleasePending;
+  doorReleasePending = false;
+  if (!ratgdoRollingStore().ready()) {
+    Serial.print("RATGDO storage: ");
+    Serial.println(ratgdoRollingStore().error());
+    return false;
+  }
+  if (!command || (release && !pairedRelease)) {
+    Serial.println("ERROR: Invalid command or unpaired door release");
+    return false;
+  }
+  idCode = ratgdoRollingStore().id();
 	Serial.print("rolling code for ");
 	Serial.print(idCode, HEX);
 	Serial.print(" ");
@@ -136,20 +136,32 @@ void getRollingCode(const char *command){
 		data = 0x0000028c;
 	}else{
 		Serial.println("ERROR: Invalid command");
-		return;
+		return false;
 	}
 
 	fixed = fixed | id;
 
-	encode_wireline(rollingCodeCounter, fixed, data, txSP2RollingCode);
+  uint32_t counter = doorCounter;
+  if (!pairedRelease && !ratgdoRollingStore().take(counter)) {
+    Serial.print("RATGDO storage: ");
+    Serial.println(ratgdoRollingStore().error());
+    return false;
+  }
+  rollingCodeCounter = ratgdoRollingStore().next();
+  if (encode_wireline(counter, fixed, data, txSP2RollingCode) != 0) {
+    Serial.println("RATGDO: rolling code encoding failed");
+    return false;
+  }
+  preparedDoorPress = strcmp(command, "door1") == 0;
+  if (preparedDoorPress) doorCounter = counter;
+  memcpy(preparedPayload, txSP2RollingCode, SECPLUS2_CODE_LEN);
+  prepared = true;
 
 	printRollingCode(txSP2RollingCode);
 	Serial.println("");
 
-	if(strcmp(command,"door1") != 0){ // door2 is created with same counter and should always be called after door1
-		rollingCodeCounter = (rollingCodeCounter + 1) & 0xfffffff;
-	}
-	return;
+  // The protocol's press/release pair shares one reserved counter, only in RAM.
+  return true;
 }
 
 void printRollingCode(byte code[SECPLUS2_CODE_LEN]){
