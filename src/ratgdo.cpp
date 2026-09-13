@@ -259,7 +259,9 @@ void gdoStateLoop() {
         msgStart = 0;
         byteCount = 0;
 
-        readRollingCode(rxSP2RollingCode, doorState, lightState, lockState, motionState, obstructionState);
+        if (readRollingCode(rxSP2RollingCode, doorState, lightState, lockState, motionState, obstructionState)) {
+          lastRX = millis();
+        }
       }
     }
 

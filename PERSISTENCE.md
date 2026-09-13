@@ -33,6 +33,15 @@ writing an ID or lowering a counter bypasses the safety invariant.
 `getRollingCode()` now returns success/failure. Public `idCode` and
 `rollingCodeCounter` remain diagnostic mirrors, not mutable persistence controls.
 
+For Security+ 2.0, `lastRX` is refreshed by `gdoStateLoop()` only after a complete
+19-byte frame successfully decodes. `readRollingCode()` now returns `bool`:
+invalid frames return false, log a Serial decode error, and leave all decoded
+state unchanged. Valid repeated statuses refresh receive freshness even if no
+field changes. This is a global bus-receive timestamp, not a per-field freshness
+guarantee or proof of opener identity: valid queries or other decoded commands
+also refresh it without updating every state field. Security+ 1.0 retains its
+existing header-time `lastRX` behavior for transmit spacing.
+
 ## Deliberate first provisioning and migration
 
 1. **Do not guess an old identity's counter.** The previous RAM-only map did not
@@ -120,6 +129,12 @@ commits, corruption, explicit provision, and exhaustion. Integration tests compi
 the actual controller, allocator, and LittleFS adapter against host fakes,
 checking mount/write/flush/rename/readback failures, shared-file preservation,
 all command entry points, stale frames, paired releases, and non-actuating boot.
-The codec is a recording fake in host integration tests; an Arduino sketch build
-checks the actual installed codec and filesystem APIs. These checks are not a
-physical power-cut or opener-compatibility test.
+Transmission fault tests use a recording fake codec. The receive regression
+links the actual installed `secplus.c` and feeds encoded frames through
+`gdoStateLoop()`, covering complete/partial/invalid frames, unchanged repeated
+status, global freshness, and unchanged Security+ 1.0 receive timing.
+The runner defaults to `../secplus/src`; set `SECPLUS_SRC` to the installed codec
+source directory if it lives elsewhere. Missing codec sources fail the run
+rather than skipping receive coverage. An Arduino sketch build checks the
+installed codec and filesystem APIs. These checks are not a physical power-cut
+or opener-compatibility test.

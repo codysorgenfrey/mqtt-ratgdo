@@ -25,7 +25,7 @@ bool consumeRollingCode(const byte* payload, unsigned int length) {
   return allowed;
 }
 
-void readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, uint8_t &light, uint8_t &lock, uint8_t &motion, uint8_t &obstruction){
+bool readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, uint8_t &light, uint8_t &lock, uint8_t &motion, uint8_t &obstruction){
 	uint32_t rolling = 0;
 	uint64_t fixed = 0;
 	uint32_t data = 0;
@@ -35,7 +35,10 @@ void readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, ui
 	uint8_t byte1 = 0;
 	uint8_t byte2 = 0;
 
-	decode_wireline(rxSP2RollingCode, &rolling, &fixed, &data);
+	if (decode_wireline(rxSP2RollingCode, &rolling, &fixed, &data) != 0) {
+		Serial.println("RATGDO: rolling code decoding failed");
+		return false;
+	}
 
 	cmd = ((fixed >> 24) & 0xf00) | (data & 0xff);
 
@@ -75,6 +78,7 @@ void readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, ui
 	}
 
 	Serial.println("");
+	return true;
 }
 
 bool getRollingCode(const char *command){
