@@ -8,7 +8,10 @@ void setup() {
     // wait for serial port to connect. Needed for native USB
   }
   
-  setupRATGDO();
+  if (!setupRATGDO()) {
+    Serial.print("RATGDO receive-only: ");
+    Serial.println(ratgdoStorageError());
+  }
 }
 
 void loop() {
