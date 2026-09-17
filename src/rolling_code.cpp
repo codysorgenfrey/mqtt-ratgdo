@@ -2,6 +2,7 @@
 #include <LittleFS.h>
 #include "rolling_code.h"
 #include "rolling_storage.h"
+#include "ratgdo_diagnostics.h"
 
 extern "C" {
   #include "secplus.h"
@@ -13,6 +14,41 @@ bool preparedDoorPress = false;
 bool doorReleasePending = false;
 uint32_t doorCounter = 0;
 byte preparedPayload[SECPLUS2_CODE_LEN];
+
+bool diagnosticsEnabled = false;
+RatgdoRxDiagnostic diagnostics[RATGDO_RX_DIAGNOSTIC_CAPACITY];
+uint8_t diagnosticHead = 0;
+uint8_t diagnosticCount = 0;
+uint32_t diagnosticDropped = 0;
+
+void recordDiagnostic(const RatgdoRxDiagnostic& record) {
+  if (!diagnosticsEnabled) return;
+  if (diagnosticCount == RATGDO_RX_DIAGNOSTIC_CAPACITY) {
+    if (diagnosticDropped != UINT32_MAX) ++diagnosticDropped;
+    return;
+  }
+  diagnostics[(diagnosticHead + diagnosticCount) % RATGDO_RX_DIAGNOSTIC_CAPACITY] = record;
+  ++diagnosticCount;
+}
+}
+
+void setRatgdoRxDiagnosticsEnabled(bool enabled) {
+  diagnosticsEnabled = enabled;
+  diagnosticHead = 0;
+  diagnosticCount = 0;
+  diagnosticDropped = 0;
+}
+
+bool readRatgdoRxDiagnostic(RatgdoRxDiagnostic& record) {
+  if (diagnosticCount == 0) return false;
+  record = diagnostics[diagnosticHead];
+  diagnosticHead = (diagnosticHead + 1) % RATGDO_RX_DIAGNOSTIC_CAPACITY;
+  --diagnosticCount;
+  return true;
+}
+
+uint32_t ratgdoRxDiagnosticsDropped() {
+  return diagnosticDropped;
 }
 
 bool consumeRollingCode(const byte* payload, unsigned int length) {
@@ -26,6 +62,7 @@ bool consumeRollingCode(const byte* payload, unsigned int length) {
 }
 
 bool readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, uint8_t &light, uint8_t &lock, uint8_t &motion, uint8_t &obstruction){
+	const uint32_t receivedAt = millis();
 	uint32_t rolling = 0;
 	uint64_t fixed = 0;
 	uint32_t data = 0;
@@ -36,6 +73,7 @@ bool readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, ui
 	uint8_t byte2 = 0;
 
 	if (decode_wireline(rxSP2RollingCode, &rolling, &fixed, &data) != 0) {
+		recordDiagnostic({receivedAt, 0xffff, 0xff, light, RatgdoRxKind::DecodeFailure});
 		Serial.println("RATGDO: rolling code decoding failed");
 		return false;
 	}
@@ -95,6 +133,10 @@ bool readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, ui
 		Serial.print(motion);
 	}
 
+	const RatgdoRxKind kind = cmd == 0x81 ? RatgdoRxKind::Status :
+		cmd == 0x281 ? RatgdoRxKind::Light : RatgdoRxKind::Command;
+	const uint8_t value = cmd == 0x81 ? (byte2 >> 1) & 1 : cmd == 0x281 ? nibble : 0xff;
+	recordDiagnostic({receivedAt, cmd, value, light, kind});
 	Serial.println("");
 	return true;
 }

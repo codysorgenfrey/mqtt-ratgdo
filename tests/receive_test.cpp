@@ -25,8 +25,18 @@ void receive(const byte* data, size_t size, unsigned now) {
   while (swSerial.available()) gdoStateLoop();
 }
 
+void diagnostic(uint32_t uptimeMs, uint16_t command, uint8_t value,
+                uint8_t light, RatgdoRxKind kind) {
+  RatgdoRxDiagnostic record;
+  assert(readRatgdoRxDiagnostic(record));
+  assert(record.uptimeMs == uptimeMs && record.command == command &&
+         record.value == value && record.light == light && record.kind == kind);
+  assert(!readRatgdoRxDiagnostic(record));
+}
+
 void lightMessages() {
   unsigned now = 1000;
+  setRatgdoRxDiagnosticsEnabled(true);
   for (uint8_t initialLight = 0; initialLight <= 2; ++initialLight) {
     for (uint8_t action = 0; action <= 15; ++action) {
       doorState = 4;
@@ -47,6 +57,7 @@ void lightMessages() {
       Serial.messages.clear();
       assert(readRollingCode(packet, doorState, lightState, lockState, motionState, obstructionState));
       assert(state() == expected && lastRX == previousRX);
+      diagnostic(fakeMillis, 0x281, action, expected[1], RatgdoRxKind::Light);
       assert(Serial.messages.find("LIGHT action:") != std::string::npos);
       if (action > 2) {
         assert(Serial.messages.find("unsupported action; state unchanged") != std::string::npos);
@@ -57,12 +68,15 @@ void lightMessages() {
       lightState = initialLight;
       receive(packet, sizeof(packet), ++now);
       assert(state() == expected && lastRX == now);
+      diagnostic(now, 0x281, action, expected[1], RatgdoRxKind::Light);
       // Explicit ON/OFF is idempotent; a repeated toggle still toggles known state.
       if (action == 2 && initialLight < 2) expected[1] = initialLight;
       receive(packet, sizeof(packet), ++now);
       assert(state() == expected && lastRX == now);
+      diagnostic(now, 0x281, action, expected[1], RatgdoRxKind::Light);
     }
   }
+  setRatgdoRxDiagnosticsEnabled(false);
 
   // A partial or rejected LIGHT frame cannot modify state or refresh lastRX.
   byte packet[SECPLUS2_CODE_LEN];
@@ -102,6 +116,83 @@ void lightMessages() {
       assert(state() == expected && lastRX == now);
     }
   }
+}
+
+void diagnosticMessages() {
+  byte packet[SECPLUS2_CODE_LEN];
+  assert(encode_wireline(48, 0x123539, 0x03000281, packet) == 0);
+  receive(packet, sizeof(packet), 3000);
+  RatgdoRxDiagnostic record = {123, 456, 7, 8, RatgdoRxKind::Command};
+  assert(!readRatgdoRxDiagnostic(record) && ratgdoRxDiagnosticsDropped() == 0);
+  assert(record.uptimeMs == 123 && record.command == 456 && record.value == 7 &&
+         record.light == 8 && record.kind == RatgdoRxKind::Command);
+
+  setRatgdoRxDiagnosticsEnabled(true);
+  const State before = state();
+  // Both unchanged statuses must be captured, not just state transitions.
+  for (unsigned now = 3001; now <= 3002; ++now) {
+    receive(packet, sizeof(packet), now);
+    assert(state() == before && lastRX == now);
+    diagnostic(now, 0x81, 1, 1, RatgdoRxKind::Status);
+  }
+  assert(encode_wireline(49, 0x123539, 0x01000281, packet) == 0);
+  receive(packet, sizeof(packet), 3003);
+  diagnostic(3003, 0x81, 0, 0, RatgdoRxKind::Status);
+  assert(encode_wireline(50, 0xa00123539ULL, 0xbc, packet) == 0);
+  receive(packet, sizeof(packet), 3004);
+  diagnostic(3004, 0xabc, 0xff, 0, RatgdoRxKind::Command);
+  packet[4] |= 0xc0;
+  const State valid = state();
+  receive(packet, sizeof(packet), 3005);
+  assert(state() == valid && lastRX == 3004);
+  diagnostic(3005, 0xffff, 0xff, 0, RatgdoRxKind::DecodeFailure);
+
+  assert(encode_wireline(51, 0x123539, 0x80, packet) == 0);
+  receive(packet, sizeof(packet) - 1, 3006);
+  assert(!readRatgdoRxDiagnostic(record) && lastRX == 3004);
+  receive(packet + sizeof(packet) - 1, 1, 3007);
+  diagnostic(3007, 0x80, 0xff, 0, RatgdoRxKind::Command);
+
+  // Drop newest on overflow, preserve FIFO order, then reuse drained slots.
+  for (unsigned i = 0; i < RATGDO_RX_DIAGNOSTIC_CAPACITY + 3; ++i) {
+    receive(packet, sizeof(packet), 3100 + i);
+  }
+  assert(ratgdoRxDiagnosticsDropped() == 3);
+  for (unsigned i = 0; i < 8; ++i) {
+    assert(readRatgdoRxDiagnostic(record) && record.uptimeMs == 3100 + i);
+  }
+  for (unsigned i = 0; i < 8; ++i) receive(packet, sizeof(packet), 3200 + i);
+  for (unsigned i = 8; i < RATGDO_RX_DIAGNOSTIC_CAPACITY; ++i) {
+    assert(readRatgdoRxDiagnostic(record) && record.uptimeMs == 3100 + i);
+  }
+  for (unsigned i = 0; i < 8; ++i) {
+    assert(readRatgdoRxDiagnostic(record) && record.uptimeMs == 3200 + i);
+  }
+  assert(!readRatgdoRxDiagnostic(record) && ratgdoRxDiagnosticsDropped() == 3);
+  receive(packet, sizeof(packet), 3300);
+  setRatgdoRxDiagnosticsEnabled(true);
+  assert(!readRatgdoRxDiagnostic(record) && ratgdoRxDiagnosticsDropped() == 0);
+  receive(packet, sizeof(packet), UINT32_MAX);
+  diagnostic(UINT32_MAX, 0x80, 0xff, 0, RatgdoRxKind::Command);
+  receive(packet, sizeof(packet), 0);
+  diagnostic(0, 0x80, 0xff, 0, RatgdoRxKind::Command);
+  for (unsigned i = 0; i < RATGDO_RX_DIAGNOSTIC_CAPACITY + 1; ++i) {
+    if (i == RATGDO_RX_DIAGNOSTIC_CAPACITY) {
+      assert(encode_wireline(52, 0x200123539ULL, 0x181, packet) == 0);
+    }
+    receive(packet, sizeof(packet), 3400 + i);
+  }
+  assert(ratgdoRxDiagnosticsDropped() == 1);
+  assert(lightState == 1 && lastRX == 3400 + RATGDO_RX_DIAGNOSTIC_CAPACITY);
+  packet[4] |= 0xc0;
+  receive(packet, sizeof(packet), 3499);
+  assert(ratgdoRxDiagnosticsDropped() == 2);
+  assert(lightState == 1 && lastRX == 3400 + RATGDO_RX_DIAGNOSTIC_CAPACITY);
+  setRatgdoRxDiagnosticsEnabled(false);
+  for (unsigned i = 0; i < RATGDO_RX_DIAGNOSTIC_CAPACITY + 1; ++i) {
+    receive(packet, sizeof(packet), 3500 + i);
+  }
+  assert(!readRatgdoRxDiagnostic(record) && ratgdoRxDiagnosticsDropped() == 0);
 }
 
 int main() {
@@ -178,17 +269,22 @@ int main() {
   gdoStateLoop();
   assert(lastRX == 600);
 
+  RatgdoRxDiagnostic record;
+  assert(!readRatgdoRxDiagnostic(record) && ratgdoRxDiagnosticsDropped() == 0);
   lightMessages();
+  diagnosticMessages();
 
   // SP1 retains its existing header-time timestamp for transmit spacing.
   controlProtocol = "secplus1";
   const byte header = 0x38;
-  receive(&header, 1, 2000);
-  assert(lastRX == 2000);
+  setRatgdoRxDiagnosticsEnabled(true);
+  receive(&header, 1, 4000);
+  assert(lastRX == 4000);
   const byte value = 0x05;
-  receive(&value, 1, 2001);
-  assert(lastRX == 2000);
+  receive(&value, 1, 4001);
+  assert(lastRX == 4000);
+  assert(!readRatgdoRxDiagnostic(record));
 
   assert(swSerial.sent.empty() && txPulses == 0 && LittleFS.commits == 0);
-  puts("receive: real codec, LIGHT actions/repeats/unknown/invalid, STATUS reconciliation, malformed/partial frames, liveness, SP1 timing passed");
+  puts("receive: real codec, LIGHT actions, STATUS reconciliation, invalid/partial frames, liveness, SP1 timing, bounded opt-in diagnostics passed");
 }

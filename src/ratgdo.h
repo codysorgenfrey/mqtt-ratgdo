@@ -15,6 +15,7 @@
 #define _RATGDO_H
 
 #include "common.h"
+#include "ratgdo_diagnostics.h"
 #include "SoftwareSerial.h" // Using espsoftwareserial https://github.com/plerup/espsoftwareserial
 
 extern SoftwareSerial swSerial;
@@ -67,6 +68,8 @@ bool ratgdoStorageReady();
 const char* ratgdoStorageError();
 // Explicit maintenance only: never call automatically on setup failure.
 bool provisionRATGDO(uint32_t controllerId, uint32_t nextRollingCode);
+// Loop-thread only: one SP2 GET_STATUS; true means serial write, not opener ACK.
+bool requestRATGDOStatus();
 void loopRATGDO();
 void setNewDoorStateCallback(NewStateCallback cb);
 void setNewLightStateCallback(NewStateCallback cb);

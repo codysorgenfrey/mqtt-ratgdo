@@ -66,6 +66,23 @@ bool dryContactDoorOpen = false;
 bool dryContactDoorClose = false;
 bool dryContactToggleLight = false;
 
+namespace {
+bool sp2SerialReady = false;
+
+bool transmitSecplus2(byte* payload, unsigned int length) {
+  if (!consumeRollingCode(payload, length)) return false;
+  digitalWrite(OUTPUT_GDO, HIGH);
+  delayMicroseconds(1305);
+  digitalWrite(OUTPUT_GDO, LOW);
+  delayMicroseconds(1260);
+  if (swSerial.write(payload, length) != length) {
+    Serial.println("RATGDO: incomplete Security+ 2.0 serial write");
+    return false;
+  }
+  return true;
+}
+}
+
 /************************* DOOR COMMUNICATION *************************/
 /*
  * Transmit a message to the door opener over uart1
@@ -76,14 +93,7 @@ bool dryContactToggleLight = false;
  */
 void transmit(byte* payload, unsigned int length) {
   if (controlProtocol == "secplus2") {
-    if (!consumeRollingCode(payload, length)) return;
-    digitalWrite(OUTPUT_GDO, HIGH); // pull the line high for 1305 micros so the door opener responds to the message
-    delayMicroseconds(1305);
-    digitalWrite(OUTPUT_GDO, LOW); // bring the line low
-
-    delayMicroseconds(1260); // "LOW" pulse duration before the message start
-
-    swSerial.write(payload, length);
+    transmitSecplus2(payload, length);
   }
   else if (controlProtocol == "secplus1") {
     if (length == 1) {
@@ -103,6 +113,20 @@ void transmit(byte* payload, unsigned int length) {
       delay(25);
     }
   }
+}
+
+bool requestRATGDOStatus() {
+  if (!sp2SerialReady || controlProtocol != "secplus2") {
+    Serial.println("RATGDO: status query requires initialized Security+ 2.0");
+    return false;
+  }
+  if (!ratgdoStorageReady()) {
+    Serial.print("RATGDO storage: ");
+    Serial.println(ratgdoStorageError());
+    return false;
+  }
+  if (!getRollingCode("reboot2")) return false;
+  return transmitSecplus2(txSP2RollingCode, SECPLUS2_CODE_LEN);
 }
 
 void pullLow() {
@@ -704,6 +728,7 @@ void toggleLock() {
 
 /*************************** SETUP FUNCTION ***************************/
 bool setupRATGDO() {
+  sp2SerialReady = false;
   if (OUTPUT_GDO != LED_BUILTIN) {
     pinMode(LED_BUILTIN, OUTPUT);
     digitalWrite(LED_BUILTIN, LOW);
@@ -740,6 +765,7 @@ bool setupRATGDO() {
     // default to secplus2
     controlProtocol = "secplus2";
     swSerial.begin(9600, SWSERIAL_8N1, INPUT_GDO, OUTPUT_GDO, true);
+    sp2SerialReady = true;
     Serial.println("Using security+ 2.0");
   }
 

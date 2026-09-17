@@ -4,6 +4,7 @@
 #include <LittleFS.h>
 #include <assert.h>
 #include <stdio.h>
+#include <array>
 
 FakeSerial Serial;
 FakeFS LittleFS;
@@ -30,9 +31,62 @@ uint32_t counter(size_t index) {
   return result;
 }
 
+void statusQuery() {
+  const std::array<int, 5> before = {{getDoorState(), getLightState(), getLockState(),
+                                    getMotionState(), getObstructionState()}};
+  const auto previousRX = lastRX;
+  for (const char* protocol : {"secplus1", "drycontact", "invalid"}) {
+    controlProtocol = protocol;
+    assert(!requestRATGDOStatus());
+    assert(swSerial.sent.empty() && txPulses == 0 && rollingCodeCounter == 0);
+  }
+  controlProtocol = "secplus2";
+  assert(requestRATGDOStatus());
+  assert(swSerial.sent.size() == 1 && txPulses == 1 && counter(0) == 0);
+  uint64_t fixed;
+  uint32_t data;
+  memcpy(&fixed, swSerial.sent[0].data() + 4, 8);
+  memcpy(&data, swSerial.sent[0].data() + 12, 4);
+  assert(fixed == 0x123539 && data == 0x80);
+  assert(lastRX == previousRX);
+  const std::array<int, 5> after = {{getDoorState(), getLightState(), getLockState(),
+                                   getMotionState(), getObstructionState()}};
+  assert(before == after);
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  assert(swSerial.sent.size() == 1 && txPulses == 1); // No replay.
+  encodingFails = true;
+  assert(!requestRATGDOStatus());
+  assert(swSerial.sent.size() == 1 && txPulses == 1);
+  encodingFails = false;
+  swSerial.writeLimit = SECPLUS2_CODE_LEN - 1;
+  assert(!requestRATGDOStatus());
+  assert(swSerial.sent.size() == 2 && txPulses == 2);
+  assert(swSerial.sent.back().size() == SECPLUS2_CODE_LEN - 1);
+  assert(Serial.messages.find("incomplete Security+ 2.0 serial write") != std::string::npos);
+  transmit(txSP2RollingCode, SECPLUS2_CODE_LEN);
+  assert(swSerial.sent.size() == 2 && txPulses == 2);
+  swSerial.writeLimit = SIZE_MAX;
+  assert(requestRATGDOStatus());
+  assert(swSerial.sent.size() == 3 && counter(2) == 3);
+  assert(ratgdoRollingStore().begin()); // Reboot skips even partially sent codes.
+  assert(ratgdoRollingStore().next() >= 64);
+  setupComplete = true; // Isolate manual query from the existing one-time sync.
+  for (unsigned i = 0; i < 10; ++i) {
+    fakeMillis += 60000;
+    loopRATGDO();
+  }
+  assert(swSerial.sent.size() == 3 && txPulses == 3);
+  controlProtocol = "secplus1";
+  assert(setupRATGDO());
+  controlProtocol = "secplus2";
+  assert(!requestRATGDOStatus()); // A string change cannot configure the UART.
+  assert(swSerial.sent.size() == 3 && txPulses == 3);
+}
+
 void blockedCommands() {
   const auto count = swSerial.sent.size();
   const auto pulses = txPulses;
+  assert(!requestRATGDOStatus());
   sync();
   toggleDoor();
   openDoor();
@@ -54,6 +108,8 @@ int main(int argc, char** argv) {
   const std::string mode = argv[1];
   // Parent-owned files must survive all operations untouched.
   LittleFS.files["/hkc0"] = {1, 2, 3};
+  assert(!requestRATGDOStatus());
+  assert(swSerial.sent.empty() && txPulses == 0);
   if (mode == "mount") {
     LittleFS.mountFails = true;
     assert(!setupRATGDO() && !LittleFS.autoFormat);
@@ -68,8 +124,15 @@ int main(int argc, char** argv) {
     LittleFS.mounted = true;
     assert(provisionRATGDO(0x123539, mode == "exhaustion" ? ratgdo::RollingLimit - 1 : 0));
     assert(swSerial.sent.empty() && txPulses == 0);
+    assert(!requestRATGDOStatus()); // Provisioning alone does not configure UART.
     assert(setupRATGDO());
-    if (mode == "normal") {
+    if (mode == "query") {
+      statusQuery();
+    } else if (mode == "query-write-failure") {
+      LittleFS.failure = FakeFS::OpenWrite;
+      assert(!requestRATGDOStatus());
+      assert(!ratgdoStorageReady() && swSerial.sent.empty() && txPulses == 0);
+    } else if (mode == "normal") {
       loopRATGDO();
       assert(swSerial.sent.size() == 6 && LittleFS.commits == 2);
       const uint32_t bootData[] = {0x8b, 0x80, 0xa0, 0x80, 0x92, 0x92};
