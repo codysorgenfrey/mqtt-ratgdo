@@ -42,6 +42,31 @@ guarantee or proof of opener identity: valid queries or other decoded commands
 also refresh it without updating every state field. Security+ 1.0 retains its
 existing header-time `lastRX` behavior for transmit spacing.
 
+### Security+ 2.0 light observations
+
+Received LIGHT (`0x281`) uses the action nibble (data bits 8-11): `0` means
+OFF, `1` ON, and `2` TOGGLE, matching upstream
+[LightAction definitions](https://github.com/ratgdo/esphome-ratgdo/blob/fb50a818e480bec7b474e18788f224890d46f517/components/ratgdo/ratgdo_state.h)
+and [LIGHT decoding](https://github.com/ratgdo/esphome-ratgdo/blob/fb50a818e480bec7b474e18788f224890d46f517/components/ratgdo/secplus2.cpp).
+Explicit OFF/ON replaces the cached light state, including unknown (`2`), and
+repeated explicit commands do not invert it. TOGGLE only inverts a known OFF/ON
+state; without a baseline it leaves unknown unchanged. Unsupported actions
+(`3`-`15`) leave state unchanged. Serial diagnostics include the action and
+resulting state, with a reason when an action cannot update the cache.
+
+STATUS (`0x81`) remains authoritative: byte2 bit 1 replaces light state.
+LIGHT does not change door, lock, motion, or obstruction state. A successfully
+decoded LIGHT frame still refreshes global `lastRX`, even for an unsupported
+action or a toggle without known state; malformed frames do not. No periodic
+polling, network logging, public API changes, or transmit behavior changes are
+introduced by this decoding fix.
+
+This corrects the proven unconditional-inversion bug, not a confirmed hardware
+diagnosis. The reported beam-triggered light/timeout mismatch had no packet
+capture identifying which messages the opener emitted. Missed frames or a light
+change without an observed LIGHT/STATUS message can still leave the cache stale;
+global receive freshness alone does not establish light-state freshness.
+
 ## Deliberate first provisioning and migration
 
 1. **Do not guess an old identity's counter.** The previous RAM-only map did not
@@ -132,7 +157,11 @@ all command entry points, stale frames, paired releases, and non-actuating boot.
 Transmission fault tests use a recording fake codec. The receive regression
 links the actual installed `secplus.c` and feeds encoded frames through
 `gdoStateLoop()`, covering complete/partial/invalid frames, unchanged repeated
-status, global freshness, and unchanged Security+ 1.0 receive timing.
+status, global freshness, and unchanged Security+ 1.0 receive timing. LIGHT tests
+execute the actual decoder directly and through receive assembly for all 16
+action nibbles from OFF/ON/unknown, repeated commands, unrelated-state
+preservation, rejected/partial LIGHT frames, and authoritative STATUS
+reconciliation followed by a toggle.
 The runner defaults to `../secplus/src`; set `SECPLUS_SRC` to the installed codec
 source directory if it lives elsewhere. Missing codec sources fail the run
 rather than skipping receive coverage. An Arduino sketch build checks the
