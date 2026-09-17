@@ -7,10 +7,8 @@ class SoftwareSerial {
  public:
   std::vector<std::vector<byte>> sent;
   std::deque<byte> received;
-  size_t writeLimit = SIZE_MAX;
   void begin(int, int, int, int, bool) {}
   size_t write(const byte* data, size_t size) {
-    if (size > writeLimit) size = writeLimit;
     sent.emplace_back(data, data + size);
     return size;
   }

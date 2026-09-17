@@ -67,62 +67,6 @@ capture identifying which messages the opener emitted. Missed frames or a light
 change without an observed LIGHT/STATUS message can still leave the cache stale;
 global receive freshness alone does not establish light-state freshness.
 
-### Temporary buffered protocol diagnostics
-
-`ratgdo.h` exposes an opt-in, fixed 16-record receive FIFO. Capture is disabled
-at boot. Call `setRatgdoRxDiagnosticsEnabled(true)` to start a capture;
-**every** enable/disable call clears pending records and resets the dropped
-counter, even if already in that mode. Drain before disabling if final records
-are needed. `readRatgdoRxDiagnostic(record)` removes the oldest record and
-returns true, or returns false without changing the argument when empty.
-`ratgdoRxDiagnosticsDropped()` reports dropped-newest records since the last
-enable/disable call, saturating at `UINT32_MAX`. Reading does not reset it.
-An overflow never changes receive processing or state.
-
-`RatgdoRxDiagnostic` contains only these fields:
-
-| Field | Meaning |
-| --- | --- |
-| `uptimeMs` | 32-bit `millis()` at complete-frame decoder entry, before Serial logging; wraps naturally, not wall time or first-byte arrival |
-| `command` | Full decoded command ID; `0xffff` on decode failure |
-| `value` | LIGHT action nibble or STATUS light bit; `0xff` otherwise |
-| `light` | Resulting cached light state (`0` OFF, `1` ON, `2` unknown) |
-| `kind` | `RatgdoRxKind::Command`, `Status`, `Light`, or `DecodeFailure` |
-
-Every successfully decoded SP2 command is captured, including unrecognized
-commands, repeated/unchanged STATUS and LIGHT, unsupported LIGHT actions, and
-toggle without a baseline. Failed decodes produce one failure record without
-using partially decoded values. Noise and partial packets that never reach the
-decoder are not recorded; SP1 is not recorded. The FIFO stores no raw packet,
-rolling counter, controller identity, or secrets. Existing Serial diagnostics
-are unchanged; the new feed does not forward their raw packet text.
-
-Capture, drain, and query APIs belong on the Arduino loop thread, not ISRs,
-concurrent tasks, or network callbacks. The FIFO performs no allocation, file
-write, network call, or callback. Consumers may drain a bounded number of
-records into their existing logging buffer after `loopRATGDO()`, correlating
-using `uptimeMs` rather than delayed log-delivery time. Consumers own capture
-duration, access control, and network logging; enabling capture never sends
-a status query.
-
-### Manual one-shot status query
-
-`bool requestRATGDOStatus()` synchronously attempts **one** SP2 GET_STATUS
-(`0x80`), reusing `getRollingCode("reboot2")`, durable code reservation, and
-the same single-use guarded transmission path. It rejects an uninitialized
-SP2 UART, a different current protocol, or unavailable storage. Reservation,
-encoding, and incomplete serial writes return false and log the failure.
-True means the serial driver accepted the complete frame, **not** an opener
-acknowledgment, successful status response, or confirmed light state. Even
-partially transmitted codes remain consumed; there is no automatic retry.
-
-This call does not update cached state or `lastRX`, schedule work, or add
-periodic polling. Only a subsequently decoded receive frame can refresh
-`lastRX`. A later STATUS response may reconcile the cache, but cannot be
-distinguished as a response to this query by this API. Existing startup sync
-and motion-triggered queries remain unchanged. Defer any HTTP request to a
-single bounded main-loop action; do not call this API from the HTTP handler.
-
 ## Deliberate first provisioning and migration
 
 1. **Do not guess an old identity's counter.** The previous RAM-only map did not
@@ -218,11 +162,6 @@ execute the actual decoder directly and through receive assembly for all 16
 action nibbles from OFF/ON/unknown, repeated commands, unrelated-state
 preservation, rejected/partial LIGHT frames, and authoritative STATUS
 reconciliation followed by a toggle.
-Additional tests cover disabled/reset/drain/overflow/wraparound diagnostic
-behavior, unchanged STATUS, all LIGHT actions, unknown commands, decoder
-failures, and receipt timestamps. One-shot query tests verify GET_STATUS
-payload, initialization/protocol/storage guards, reservation/encoding/write
-failures, replay prevention, unchanged cache/freshness, and no periodic retry.
 The runner defaults to `../secplus/src`; set `SECPLUS_SRC` to the installed codec
 source directory if it lives elsewhere. Missing codec sources fail the run
 rather than skipping receive coverage. An Arduino sketch build checks the

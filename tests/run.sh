@@ -12,7 +12,7 @@ cxx="${CXX:-c++}"
   -fsanitize=address,undefined -DESP8266 -Itests/fakes -Isrc \
   src/rolling_store.cpp src/rolling_storage.cpp src/rolling_code.cpp \
   src/ratgdo.cpp src/static_code.cpp tests/transmission_test.cpp -o "$build/transmission"
-for mode in mount blank normal query query-write-failure exhaustion corrupt truncated pending interrupted open short flush rename readback; do
+for mode in mount blank normal exhaustion corrupt truncated pending interrupted open short flush rename readback; do
   "$build/transmission" "$mode"
 done
 secplus_src="${SECPLUS_SRC:-../secplus/src}"
