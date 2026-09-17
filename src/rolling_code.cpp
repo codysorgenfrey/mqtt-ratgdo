@@ -66,9 +66,27 @@ bool readRollingCode(byte rxSP2RollingCode[SECPLUS2_CODE_LEN], uint8_t &door, ui
 		Serial.print((byte1 >> 6) & 1);
 
 	}else if(cmd == 0x281){
-		light ^= 1; // toggle bit
+		Serial.print(" | LIGHT action:");
+		Serial.print(nibble);
 
-		Serial.print(" | LIGHT:");
+		switch(nibble){
+			case 0: // OFF
+			case 1: // ON
+				light = nibble;
+				break;
+			case 2: // TOGGLE
+				if(light <= 1){
+					light ^= 1;
+				}else{
+					Serial.print(" | RATGDO: toggle without known state; state unchanged");
+				}
+				break;
+			default:
+				Serial.print(" | RATGDO: unsupported action; state unchanged");
+				break;
+		}
+
+		Serial.print(" state:");
 		Serial.print(light);
 	}else if(cmd == 0x84){
 	}else if(cmd == 0x285){
